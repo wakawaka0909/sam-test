@@ -1,0 +1,36 @@
+{
+  "Comment": "Size-based split workflow",
+  "QueryLanguage": "JSONata",
+  "StartAt": "SplitTask",
+  "States": {
+    "SplitTask": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Arguments": {
+        "FunctionName": "${SplitLambdaArn}", 
+        "Payload": "{% $states.input %}"
+      },
+      "Next": "Map"
+    },
+    "Map": {
+      "Type": "Map",
+      "Items": "{% $states.input.Payload.items %}",
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "DISTRIBUTED",
+          "ExecutionType": "STANDARD"
+        },
+        "StartAt": "test",
+        "States": {
+          "test": {
+            "Type": "Pass",
+            "End": true
+          }
+        }
+      },
+      "Label": "test",
+      "MaxConcurrency": 1000,
+      "End": true
+    }
+  }
+}
