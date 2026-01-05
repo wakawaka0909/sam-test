@@ -7,7 +7,7 @@
       "Type": "Task",
       "Resource": "arn:aws:states:::lambda:invoke",
       "Arguments": {
-        "FunctionName": "${SplitLambdaArn}", 
+        "FunctionName": "arn:aws:lambda:ap-northeast-1:678135951842:function:testttttttttt-split",
         "Payload": "{% $states.input %}"
       },
       "Next": "Map"
