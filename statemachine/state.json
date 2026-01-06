@@ -1,5 +1,5 @@
 {
-  "Comment": "Size-based split workflow",
+  "Comment": "ZIP Split and Parallel Process Workflow - Debug Mode",
   "QueryLanguage": "JSONata",
   "StartAt": "SplitTask",
   "States": {
@@ -20,16 +20,81 @@
           "Mode": "DISTRIBUTED",
           "ExecutionType": "STANDARD"
         },
-        "StartAt": "test",
+        "StartAt": "DBImportTask",
         "States": {
-          "test": {
+          "DBImportTask": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Arguments": {
+              "FunctionName": "arn:aws:lambda:ap-northeast-1:678135951842:function:testttttttttt-simulation",
+              "Payload": "{% $states.input %}"
+            },
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "Next": "FinalPass",
+                "Assign": {
+                  "failed_state": "DBImportTask"
+                }
+              }
+            ],
+            "Next": "CleansingTask",
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "BackoffRate": 2,
+                "IntervalSeconds": 5,
+                "MaxAttempts": 5
+              }
+            ]
+          },
+          "CleansingTask": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Arguments": {
+              "FunctionName": "arn:aws:lambda:ap-northeast-1:678135951842:function:testttttttttt-simulation:$LATEST",
+              "Payload": "{% $states.input.Payload %}"
+            },
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "IntervalSeconds": 5,
+                "MaxAttempts": 3,
+                "BackoffRate": 2,
+                "JitterStrategy": "FULL"
+              }
+            ],
+            "Next": "FinalPass",
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "Next": "FinalPass",
+                "Assign": {
+                  "failed_state": "CleansingTask"
+                }
+              }
+            ]
+          },
+          "FinalPass": {
             "Type": "Pass",
-            "End": true
+            "End": true,
+            "Output": {
+              "status": "{% $exists($states.input.Payload) ? 'SUCCESS' : 'FAILED' %}",
+              "ファイルパス": "{% $exists($states.input.Payload) ? $states.input.Payload.file_path : $substringAfter($parse($states.input.Cause).errorMessage, 'Random Failure: ') %}",
+              "失敗した工程": "{% $exists($failed_state) ? $failed_state : 'なし' %}"
+            }
           }
         }
       },
-      "Label": "test",
-      "MaxConcurrency": 1000,
+      "ToleratedFailurePercentage": 100,
       "End": true
     }
   }

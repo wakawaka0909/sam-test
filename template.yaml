@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Transform: AWS::Serverless-2016-10-31 # SAMを使う宣言
-Description: Full Serverless ZIP Split Pipeline (SAM version)
+Transform: AWS::Serverless-2016-10-31
+Description: Full Serverless ZIP Split Pipeline with Simulation
 
 Resources:
   # --- 1. S3 集信バケット ---
@@ -19,7 +19,7 @@ Resources:
                     Value: "input/"
             Queue: !GetAtt ZipSplitQueue.Arn
 
-    # --- 2. S3 分割ファイル保存バケット ---
+  # --- 2. S3 分割ファイル保存バケット ---
   SplitBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -51,7 +51,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub "${AWS::StackName}-dispatcher"
-      CodeUri: lambda/dispatcher/ # フォルダを指定
+      CodeUri: lambda/dispatcher/
       Handler: dispatcher.lambda_handler
       Runtime: python3.12
       Timeout: 30
@@ -73,7 +73,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub "${AWS::StackName}-split"
-      CodeUri: lambda/split/ # フォルダを指定
+      CodeUri: lambda/split/
       Handler: split.lambda_handler
       Runtime: python3.12
       MemorySize: 8192
@@ -84,20 +84,43 @@ Resources:
         - S3WritePolicy:
             BucketName: !Ref SplitBucket
 
-  # --- 6. Step Functions ---
+  # --- 6. Simulation Lambda (Random Test) ---
+  SimulationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-simulation"
+      # インラインで作成（テスト用）
+      InlineCode: |
+        import random
+        def lambda_handler(event, context):
+            file_path = event.get('file_path', 'unknown')
+            if random.random() < 0.5:
+                raise Exception(f"Random Failure: {file_path}")
+            return {"status": "SUCCESS", "file_path": file_path}
+      Handler: index.lambda_handler
+      Runtime: python3.12
+      Timeout: 10
+
+  # --- 7. Step Functions ---
   ZipSplitStateMachine:
     Type: AWS::Serverless::StateMachine
     Properties:
       Name: !Sub "${AWS::StackName}-statemachine"
-      DefinitionUri: statemachine/state.json # 外部ファイルを指定
+      DefinitionUri: statemachine/state.json
       DefinitionSubstitutions:
         SplitLambdaArn: !GetAtt SplitFunction.Arn
+        SimulationLambdaArn: !GetAtt SimulationFunction.Arn # ASLに渡す変数
       Policies:
         - LambdaInvokePolicy:
             FunctionName: !Ref SplitFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref SimulationFunction # シミュレーション用への実行権限
         - Statement:
             - Effect: Allow
               Action:
                 - "states:StartExecution"
+                - "states:DescribeExecution"
+                - "states:StopExecution"
+                - "states:RedriveExecution"
               Resource: 
                 - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${AWS::StackName}-statemachine"
