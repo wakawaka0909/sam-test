@@ -2,7 +2,6 @@ import boto3
 
 s3 = boto3.client('s3')
 
-# ★ここを実際のバケット名に書き換えてください
 SplitBucket = 'test-split-20260105'
 ErrorBucket = 'test-error-20260107'
 
@@ -23,7 +22,7 @@ def lambda_handler(event, context):
         try:
             # 1. コピー（キーを同じにすることで構造を維持）
             copy_source = {'Bucket': SplitBucket, 'Key': file_path}
-            s3.copy_object(CopySource=SplitBucket, Bucket=ErrorBucket, Key=file_path)
+            s3.copy_object(CopySource=copy_source, Bucket=ErrorBucket, Key=file_path)
             
             # 2. 元のファイルを削除
             s3.delete_object(Bucket=SplitBucket, Key=file_path)
