@@ -18,4 +18,13 @@ manifest_hash = ""
 packagetype = "Zip"
 functions = ["SplitFunction"]
 
+[function_build_definitions.64bfe8a6-f7be-4bf6-88e1-6a0e3edf4738]
+codeuri = "C:\\Users\\wakayama\\Documents\\トラストIT\\Visual studio code練習用フォルダ\\sam-test\\lambda\\end"
+runtime = "python3.12"
+architecture = "x86_64"
+handler = "end.lambda_handler"
+manifest_hash = ""
+packagetype = "Zip"
+functions = ["EndFunction"]
+
 [layer_build_definitions]

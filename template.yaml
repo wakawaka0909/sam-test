@@ -25,6 +25,12 @@ Resources:
     Properties:
       BucketName: test-split-20260105
 
+  # --- 3. S3 不良ファイル保存バケット ---
+  ErrorBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: test-error-20260107
+
   # --- 3. SQS Queue & Policy ---
   ZipSplitQueue:
     Type: AWS::SQS::Queue
@@ -100,6 +106,23 @@ Resources:
       Handler: index.lambda_handler
       Runtime: python3.12
       Timeout: 10
+    
+  # --- 6. End Lambda ---
+  EndFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-End"
+      CodeUri: lambda/end/
+      Handler: end.lambda_handler
+      Runtime: python3.12
+      Timeout: 900
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref ZipSourceBucket
+        - S3WritePolicy:
+            BucketName: !Ref SplitBucket
+        - S3WritePolicy:
+            BucketName: !Ref ErrorBucket
 
   # --- 7. Step Functions ---
   ZipSplitStateMachine:
@@ -109,12 +132,15 @@ Resources:
       DefinitionUri: statemachine/state.json
       DefinitionSubstitutions:
         SplitLambdaArn: !GetAtt SplitFunction.Arn
-        SimulationLambdaArn: !GetAtt SimulationFunction.Arn # ASLに渡す変数
+        SimulationLambdaArn: !GetAtt SimulationFunction.Arn
+        EndLambdaArn: !GetAtt EndFunction.Arn
       Policies:
         - LambdaInvokePolicy:
             FunctionName: !Ref SplitFunction
         - LambdaInvokePolicy:
-            FunctionName: !Ref SimulationFunction # シミュレーション用への実行権限
+            FunctionName: !Ref SimulationFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref EndFunction
         - Statement:
             - Effect: Allow
               Action:
