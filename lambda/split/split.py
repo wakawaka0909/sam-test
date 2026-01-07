@@ -22,7 +22,7 @@ def lambda_handler(event, context):
     # ★ ここで初期化する必要があります
     uploaded_files = [] 
     
-    TARGET_SIZE = 500 * 1024 * 1024 
+    TARGET_SIZE = 100 * 1024 * 1024 
     READ_CHUNK = 64 * 1024 * 1024
     part_num = 1
     
