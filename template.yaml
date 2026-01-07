@@ -99,12 +99,12 @@ Resources:
       InlineCode: |
         import random
         def lambda_handler(event, context):
-            file_path = event.get('file_path', 'unknown')
+            split_path = event.get('split_path', 'unknown')
             src_path = event.get('src_path', 'unknown')
             table_name = event.get('table_name', 'unknown')
             if random.random() < 0.5:
-                raise Exception(f"Random Failure: {file_path}")
-            return {"status": "SUCCESS", "file_path": file_path, "src_path": src_path, "table_name": table_name}
+                raise Exception(f"Random Failure: {split_path}")
+            return {"status": "SUCCESS", "split_path": split_path, "src_path": src_path, "table_name": table_name}
       Handler: index.lambda_handler
       Runtime: python3.12
       Timeout: 10

@@ -68,9 +68,9 @@ def lambda_handler(event, context):
             "items": [
                 {
                     "src_path": key,
-                    "file_path": f, 
+                    "split_path": s, 
                     "table_name": table_name
-                } for f in uploaded_files
+                } for s in uploaded_files
             ]
         }
 

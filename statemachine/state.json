@@ -10,7 +10,17 @@
         "FunctionName": "arn:aws:lambda:ap-northeast-1:678135951842:function:testttttttttt-split",
         "Payload": "{% $states.input %}"
       },
-      "Next": "Map"
+      "Next": "Map",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "BackoffRate": 2,
+          "IntervalSeconds": 1,
+          "MaxAttempts": 1
+        }
+      ]
     },
     "Map": {
       "Type": "Map",
@@ -20,8 +30,17 @@
           "Mode": "DISTRIBUTED",
           "ExecutionType": "STANDARD"
         },
-        "StartAt": "DBImportTask",
+        "StartAt": "変数設定",
         "States": {
+          "変数設定": {
+            "Type": "Pass",
+            "Next": "DBImportTask",
+            "Assign": {
+              "split_path": "{% $states.input.split_path %}",
+              "src_path": "{% $states.input.src_path %}",
+              "table_name": "{% $states.input.table_name %}"
+            }
+          },
           "DBImportTask": {
             "Type": "Task",
             "Resource": "arn:aws:states:::lambda:invoke",
@@ -36,9 +55,7 @@
                 ],
                 "Next": "FinalPass",
                 "Assign": {
-                  "failed_state": "DBImportTask",
-                  "src_path": "{% $states.input.src_path %}",
-                  "table_name": "{% $states.input.table_name %}"
+                  "failed_state": "DBImportTask"
                 }
               }
             ],
@@ -52,11 +69,7 @@
                 "IntervalSeconds": 1,
                 "MaxAttempts": 1
               }
-            ],
-            "Assign": {
-              "src_path": "{% $states.input.src_path %}",
-              "table_name": "{% $states.input.table_name %}"
-            }
+            ]
           },
           "CleansingTask": {
             "Type": "Task",
@@ -84,16 +97,10 @@
                 ],
                 "Next": "FinalPass",
                 "Assign": {
-                  "failed_state": "CleansingTask",
-                  "src_path": "{% $states.input.Payload.src_path %}",
-                  "table_name": "{% $states.input.Payload.table_name %}"
+                  "failed_state": "CleansingTask"
                 }
               }
-            ],
-            "Assign": {
-              "src_path": "{% $states.input.Payload.src_path %}",
-              "table_name": "{% $states.input.Payload.table_name %}"
-            }
+            ]
           },
           "FinalPass": {
             "Type": "Pass",
@@ -102,7 +109,7 @@
               "status": "{% $exists($states.input.Payload) ? 'SUCCESS' : 'FAILED' %}",
               "テーブル名": "{% $table_name %}",
               "元ファイルパス": "{% $src_path %}",
-              "分割ファイルパス": "{% $exists($states.input.Payload) ? $states.input.Payload.file_path : $substringAfter($parse($states.input.Cause).errorMessage, 'Random Failure: ') %}",
+              "分割ファイルパス": "{% $split_path %}",
               "失敗した工程": "{% $exists($failed_state) ? $failed_state : 'なし' %}"
             }
           }
