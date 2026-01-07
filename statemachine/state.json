@@ -36,7 +36,9 @@
                 ],
                 "Next": "FinalPass",
                 "Assign": {
-                  "failed_state": "DBImportTask"
+                  "failed_state": "DBImportTask",
+                  "src_path": "{% $states.input.src_path %}",
+                  "table_name": "{% $states.input.table_name %}"
                 }
               }
             ],
@@ -50,7 +52,11 @@
                 "IntervalSeconds": 1,
                 "MaxAttempts": 1
               }
-            ]
+            ],
+            "Assign": {
+              "src_path": "{% $states.input.src_path %}",
+              "table_name": "{% $states.input.table_name %}"
+            }
           },
           "CleansingTask": {
             "Type": "Task",
@@ -78,17 +84,25 @@
                 ],
                 "Next": "FinalPass",
                 "Assign": {
-                  "failed_state": "CleansingTask"
+                  "failed_state": "CleansingTask",
+                  "src_path": "{% $states.input.Payload.src_path %}",
+                  "table_name": "{% $states.input.Payload.table_name %}"
                 }
               }
-            ]
+            ],
+            "Assign": {
+              "src_path": "{% $states.input.Payload.src_path %}",
+              "table_name": "{% $states.input.Payload.table_name %}"
+            }
           },
           "FinalPass": {
             "Type": "Pass",
             "End": true,
             "Output": {
               "status": "{% $exists($states.input.Payload) ? 'SUCCESS' : 'FAILED' %}",
-              "ファイルパス": "{% $exists($states.input.Payload) ? $states.input.Payload.file_path : $substringAfter($parse($states.input.Cause).errorMessage, 'Random Failure: ') %}",
+              "テーブル名": "{% $table_name %}",
+              "元ファイルパス": "{% $src_path %}",
+              "分割ファイルパス": "{% $exists($states.input.Payload) ? $states.input.Payload.file_path : $substringAfter($parse($states.input.Cause).errorMessage, 'Random Failure: ') %}",
               "失敗した工程": "{% $exists($failed_state) ? $failed_state : 'なし' %}"
             }
           }

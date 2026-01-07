@@ -100,9 +100,11 @@ Resources:
         import random
         def lambda_handler(event, context):
             file_path = event.get('file_path', 'unknown')
+            src_path = event.get('src_path', 'unknown')
+            table_name = evnet.get('table_name', 'unknown')
             if random.random() < 0.5:
                 raise Exception(f"Random Failure: {file_path}")
-            return {"status": "SUCCESS", "file_path": file_path}
+            return {"status": "SUCCESS", "file_path": file_path, "src_path": src_path, "table_name": table_name}
       Handler: index.lambda_handler
       Runtime: python3.12
       Timeout: 10
