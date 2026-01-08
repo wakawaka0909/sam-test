@@ -12,8 +12,8 @@ def lambda_handler(event, context):
     # 1. 自らメッセージを取りに行く
     response = sqs.receive_message(
         QueueUrl=REQUEST_QUEUE_URL,
-        MaxNumberOfMessages=1, # 1回に処理するメッセージ数
-        WaitTimeSeconds=10     # ロングポーリング（メッセージがなければ最大10秒待機）
+        MaxNumberOfMessages=1,
+        WaitTimeSeconds=10
     )
     
     messages = response.get('Messages', [])
@@ -27,56 +27,55 @@ def lambda_handler(event, context):
         
         try:
             body = json.loads(body_str)
+            # 文字列として2重エンコードされている場合の対策
+            if isinstance(body, str):
+                body = json.loads(body)
 
             records = body.get('Records', [])
-            print(f"DEBUG: records type: {type(records)}, count: {len(records)}")
+            print(f"DEBUG: records count: {len(records)}")
             
-            # 元のロジック：S3レコードを回す
             for s3_record in records:
-                if 's3' not in s3_record:
-                    continue
-                if s3_record['s3']['object'].get('size', 0) == 0:
-                    continue
-
-                # --- ここから追加・修正処理 ---
-
-                # A. 別のキューにメッセージを移動（コピー）
-                sqs.send_message(
-                    QueueUrl=JOB_QUEUE_URL,
-                    MessageBody=body_str
-                )
-
-                # B. Step Functions 起動用の設定
-                key = s3_record['s3']['object']['key']
-                raw_name = os.path.basename(key).split('.')[0]
-                safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', raw_name)[:50]
-                now = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
-                exec_name = f"{safe_name}_{now}"
-
-                sfn_input = {
-                    "bucket_name": s3_record['s3']['bucket']['name'],
-                    "src_key": key,
-                    "size_bytes": s3_record['s3']['object']['size'],
-                    "original_message_id": msg['MessageId']
-                }
+                print("--- Loop Start ---")
                 
-                sfn.start_execution(
-                    stateMachineArn=STATE_MACHINE_ARN,
-                    name=exec_name,
-                    input=json.dumps(sfn_input)
-                )
+                # 1. 's3' キーの存在確認
+                if 's3' not in s3_record:
+                    print(f"DEBUG: 's3' not in record. Keys found: {list(s3_record.keys())}")
+                    continue
+                print("DEBUG: Step 1 Passed ('s3' key found)")
 
-            # D. 全ての処理が完了したら、送信元のキューから削除
-            sqs.delete_message(
-                QueueUrl=REQUEST_QUEUE_URL,
-                ReceiptHandle=receipt_handle
-            )
-            print(f"Successfully processed and moved message: {msg['MessageId']}")
+                # 2. size の取得と判定
+                s3_data = s3_record['s3']
+                obj_size = s3_data['object'].get('size', 0)
+                print(f"DEBUG: Step 2 - Object size is {obj_size}")
+
+                if int(obj_size) == 0:
+                    print("DEBUG: Step 2 Skipped - Size is 0 (Folder or Empty)")
+                    continue
+                print("DEBUG: Step 2 Passed (Size > 0)")
+
+                # 3. キー名の取得
+                key = s3_data['object'].get('key')
+                print(f"DEBUG: Step 3 - Target Key: {key}")
+
+                # 4. SFN起動
+                print("DEBUG: Step 4 - Attempting start_execution...")
+                res = sfn.start_execution(
+                    stateMachineArn=STATE_MACHINE_ARN,
+                    input=json.dumps({
+                        "bucket_name": s3_data['bucket']['name'],
+                        "object_key": key
+                    })
+                )
+                print(f"DEBUG: Step 5 SUCCESS! ARN: {res['executionArn']}")
+
+            # 成功したらメッセージ削除
+            sqs.delete_message(QueueUrl=REQUEST_QUEUE_URL, ReceiptHandle=receipt_handle)
+            print("DEBUG: Message deleted from SQS")
 
         except Exception as e:
-            print(f"Error: {e}")
-            # エラー時は delete_message を呼ばずに終了することで、
-            # メッセージはソースキューに残り、再度取得可能になります。
-            continue
+            # ここが足りなかった except ブロックです
+            print(f"DEBUG: Error processing message: {e}")
+            import traceback
+            traceback.print_exc()
 
     return {'statusCode': 200, 'body': f"Processed {len(messages)} messages"}
