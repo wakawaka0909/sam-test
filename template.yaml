@@ -6,7 +6,7 @@ Resources:
   # --- 1. S3 集信バケット ---
   ZipSourceBucket:
     Type: AWS::S3::Bucket
-    DependsOn: ZipSplitQueuePolicy
+    DependsOn: RequestQueuePolicy
     Properties:
       BucketName: test-20260105
       NotificationConfiguration:
@@ -17,7 +17,7 @@ Resources:
                 Rules:
                   - Name: prefix
                     Value: "input/"
-            Queue: !GetAtt ZipSplitQueue.Arn
+            Queue: !GetAtt RequestQueue.Arn
 
   # --- 2. S3 分割ファイル保存バケット ---
   SplitBucket:
@@ -32,25 +32,32 @@ Resources:
       BucketName: test-error-20260107
 
   # --- 3. SQS Queue & Policy ---
-  ZipSplitQueue:
+  RequestQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: !Sub "${AWS::StackName}-queue"
+      QueueName: !Sub "${AWS::StackName}-request-queue"
       VisibilityTimeout: 900
 
-  ZipSplitQueuePolicy:
+  RequestQueuePolicy:
     Type: AWS::SQS::QueuePolicy
     Properties:
-      Queues: [!Ref ZipSplitQueue]
+      Queues: [!Ref RequestQueue]
       PolicyDocument:
         Statement:
           - Effect: Allow
             Principal: { Service: "s3.amazonaws.com" }
             Action: "sqs:SendMessage"
-            Resource: !GetAtt ZipSplitQueue.Arn
+            Resource: !GetAtt RequestQueue.Arn
             Condition:
               StringEquals:
                 aws:SourceAccount: !Ref "AWS::AccountId"
+  
+    # --- 3. SQS Queue & Policy ---
+  JobQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${AWS::StackName}-job-queue"
+      VisibilityTimeout: 900
 
   # --- 4. Dispatcher Lambda ---
   DispatcherFunction:
@@ -64,15 +71,15 @@ Resources:
       Environment:
         Variables:
           STATE_MACHINE_ARN: !Ref ZipSplitStateMachine
+          REQUEST_QUEUE_URL: !Ref RequestQueue
+          JOB_QUEUE_URL: !Ref JobQueue
       Policies:
         - StepFunctionsExecutionPolicy:
             StateMachineName: !GetAtt ZipSplitStateMachine.Name
-      Events:
-        MySQSEvent:
-          Type: SQS
-          Properties:
-            Queue: !GetAtt ZipSplitQueue.Arn
-            BatchSize: 10
+        - SQSPollerPolicy:
+            QueueName: !GetAtt RequestQueue.QueueName
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt JobQueue.QueueName
 
   # --- 5. Split Lambda (Worker) ---
   SplitFunction:
