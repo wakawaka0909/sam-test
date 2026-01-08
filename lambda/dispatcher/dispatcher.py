@@ -28,6 +28,8 @@ def lambda_handler(event, context):
         
         try:
             body = json.loads(body_str)
+            if isinstance(body, str):
+                body = json.loads(body)
 
             records = body.get('Records', [])
             
