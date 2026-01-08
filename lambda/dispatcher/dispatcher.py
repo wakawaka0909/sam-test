@@ -9,74 +9,78 @@ JOB_QUEUE_URL = os.environ['JOB_QUEUE_URL']
 STATE_MACHINE_ARN = os.environ['STATE_MACHINE_ARN']
 
 def lambda_handler(event, context):
-    # 1. 自らメッセージを取りに行く
-    response = sqs.receive_message(
-        QueueUrl=REQUEST_QUEUE_URL,
-        MaxNumberOfMessages=1, # 1回に処理するメッセージ数
-        WaitTimeSeconds=10     # ロングポーリング（メッセージがなければ最大10秒待機）
-    )
-    
-    messages = response.get('Messages', [])
-    if not messages:
-        print("No messages to process.")
-        return {'statusCode': 200, 'body': 'No messages'}
+    total_processed = 0
+    MAX_LIMIT = 10
 
-    for msg in messages:
-        receipt_handle = msg['ReceiptHandle']
-        body_str = msg['Body']
-        message_id = msg['MessageId']
+    while total_processed < MAX_LIMIT:
+        response = sqs.receive_message(
+            QueueUrl=REQUEST_QUEUE_URL,
+            MaxNumberOfMessages=10, # 1回に処理するメッセージ数
+            WaitTimeSeconds=1     # ロングポーリング（メッセージがなければ最大10秒待機）
+        )
         
-        try:
-            body = json.loads(body_str)
-            if isinstance(body, str):
-                body = json.loads(body)
+        messages = response.get('Messages', [])
+        if not messages:
+            print("No messages to process.")
+            return {'statusCode': 200, 'body': 'No messages'}
 
-            records = body.get('Records', [])
+        for msg in messages:
+            receipt_handle = msg['ReceiptHandle']
+            body_str = msg['Body']
+            message_id = msg['MessageId']
             
-            # 元のロジック：S3レコードを回す
-            for s3_record in records:
-                if 's3' not in s3_record:
-                    continue
-                if s3_record['s3']['object'].get('size', 0) == 0:
-                    continue
+            try:
+                body = json.loads(body_str)
+                if isinstance(body, str):
+                    body = json.loads(body)
 
-                # A. 別のキューにメッセージを移動（コピー）
-                sqs.send_message(
-                    QueueUrl=JOB_QUEUE_URL,
-                    MessageBody=body_str
-                )
-
-                # B. Step Functions 起動用の設定
-                key = s3_record['s3']['object']['key']
-                raw_name = os.path.basename(key).split('.')[0]
-                safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', raw_name)[:50]
-                now = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
-                exec_name = f"{safe_name}_{now}_{message_id}"
-
-                sfn_input = {
-                    "bucket_name": s3_record['s3']['bucket']['name'],
-                    "src_key": key,
-                    "size_bytes": s3_record['s3']['object']['size'],
-                    "original_message_id": msg['MessageId']
-                }
+                records = body.get('Records', [])
                 
-                sfn.start_execution(
-                    stateMachineArn=STATE_MACHINE_ARN,
-                    name=exec_name,
-                    input=json.dumps(sfn_input)
+                # 元のロジック：S3レコードを回す
+                for s3_record in records:
+                    if 's3' not in s3_record:
+                        continue
+                    if s3_record['s3']['object'].get('size', 0) == 0:
+                        continue
+
+                    # A. 別のキューにメッセージを移動（コピー）
+                    sqs.send_message(
+                        QueueUrl=JOB_QUEUE_URL,
+                        MessageBody=body_str
+                    )
+
+                    # B. Step Functions 起動用の設定
+                    key = s3_record['s3']['object']['key']
+                    raw_name = os.path.basename(key).split('.')[0]
+                    safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', raw_name)[:50]
+                    now = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
+                    exec_name = f"{safe_name}_{now}_{message_id}"
+
+                    sfn_input = {
+                        "bucket_name": s3_record['s3']['bucket']['name'],
+                        "src_key": key,
+                        "size_bytes": s3_record['s3']['object']['size'],
+                        "original_message_id": msg['MessageId']
+                    }
+                    
+                    sfn.start_execution(
+                        stateMachineArn=STATE_MACHINE_ARN,
+                        name=exec_name,
+                        input=json.dumps(sfn_input)
+                    )
+
+                # D. 全ての処理が完了したら、送信元のキューから削除
+                sqs.delete_message(
+                    QueueUrl=REQUEST_QUEUE_URL,
+                    ReceiptHandle=receipt_handle
                 )
+                total_processed += 1
+                print(f"Successfully processed and moved message: {msg['MessageId']}")
 
-            # D. 全ての処理が完了したら、送信元のキューから削除
-            sqs.delete_message(
-                QueueUrl=REQUEST_QUEUE_URL,
-                ReceiptHandle=receipt_handle
-            )
-            print(f"Successfully processed and moved message: {msg['MessageId']}")
-
-        except Exception as e:
-            print(f"Error: {e}")
-            # エラー時は delete_message を呼ばずに終了することで、
-            # メッセージはソースキューに残り、再度取得可能になります。
-            continue
+            except Exception as e:
+                print(f"Error: {e}")
+                # エラー時は delete_message を呼ばずに終了することで、
+                # メッセージはソースキューに残り、再度取得可能になります。
+                continue
 
     return {'statusCode': 200, 'body': f"Processed {len(messages)} messages"}
