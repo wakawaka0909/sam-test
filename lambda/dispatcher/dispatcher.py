@@ -24,12 +24,12 @@ def lambda_handler(event, context):
     for msg in messages:
         receipt_handle = msg['ReceiptHandle']
         body_str = msg['Body']
+        message_id = msg['MessageId']
         
         try:
             body = json.loads(body_str)
 
             records = body.get('Records', [])
-            print(f"DEBUG: records type: {type(records)}, count: {len(records)}")
             
             # 元のロジック：S3レコードを回す
             for s3_record in records:
@@ -37,8 +37,6 @@ def lambda_handler(event, context):
                     continue
                 if s3_record['s3']['object'].get('size', 0) == 0:
                     continue
-
-                # --- ここから追加・修正処理 ---
 
                 # A. 別のキューにメッセージを移動（コピー）
                 sqs.send_message(
@@ -51,7 +49,7 @@ def lambda_handler(event, context):
                 raw_name = os.path.basename(key).split('.')[0]
                 safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', raw_name)[:50]
                 now = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
-                exec_name = f"{safe_name}_{now}"
+                exec_name = f"{safe_name}_{now}_{message_id}"
 
                 sfn_input = {
                     "bucket_name": s3_record['s3']['bucket']['name'],
