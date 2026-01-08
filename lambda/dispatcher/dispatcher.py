@@ -28,10 +28,11 @@ def lambda_handler(event, context):
         try:
             body = json.loads(body_str)
 
+            records = body.get('Records', [])
             print(f"DEBUG: records type: {type(records)}, count: {len(records)}")
             
             # 元のロジック：S3レコードを回す
-            for s3_record in body.get('Records', []):
+            for s3_record in records:
                 if 's3' not in s3_record:
                     continue
                 if s3_record['s3']['object'].get('size', 0) == 0:
@@ -67,7 +68,7 @@ def lambda_handler(event, context):
 
             # D. 全ての処理が完了したら、送信元のキューから削除
             sqs.delete_message(
-                QueueUrl=SOURCE_QUEUE_URL,
+                QueueUrl=REQUEST_QUEUE_URL,
                 ReceiptHandle=receipt_handle
             )
             print(f"Successfully processed and moved message: {msg['MessageId']}")
